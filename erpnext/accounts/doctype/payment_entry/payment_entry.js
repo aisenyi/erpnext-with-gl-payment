@@ -15,13 +15,26 @@ frappe.ui.form.on('Payment Entry', {
 			var account_types = in_list(["Pay", "Internal Transfer"], frm.doc.payment_type) ?
 				["Bank", "Cash"] : [frappe.boot.party_account_types[frm.doc.party_type]];
 
-			return {
-				filters: {
-					"account_type": ["in", account_types],
-					"is_group": 0,
-					"company": frm.doc.company
+			if(frm.doc.payment_type == "GL Payment")
+			{
+				return {
+					filters: {
+						"account_type": ["in", ["Bank", "Cash"]],
+						"is_group": 0,
+						"company": frm.doc.company
+					}
 				}
 			}
+			else
+			{
+				return {
+					filters: {
+						"account_type": ["in", account_types],
+						"is_group": 0,
+						"company": frm.doc.company
+					}
+ 				}
+ 			}
 		});
 		frm.set_query("party_type", function() {
 			return{
@@ -44,12 +57,23 @@ frappe.ui.form.on('Payment Entry', {
 		frm.set_query("paid_to", function() {
 			var account_types = in_list(["Receive", "Internal Transfer"], frm.doc.payment_type) ?
 				["Bank", "Cash"] : [frappe.boot.party_account_types[frm.doc.party_type]];
-
-			return {
-				filters: {
-					"account_type": ["in", account_types],
-					"is_group": 0,
-					"company": frm.doc.company
+			if(frm.doc.payment_type == "GL Payment")
+			{
+				return {
+					filters: {
+						"is_group": 0,
+						"company": frm.doc.company
+					}
+				}
+			}
+			else
+			{
+				return {
+					filters: {
+						"account_type": ["in", account_types],
+						"is_group": 0,
+						"company": frm.doc.company
+					}
 				}
 			}
 		});
@@ -162,6 +186,8 @@ frappe.ui.form.on('Payment Entry', {
 				((frm.doc.paid_from_account_currency != company_currency ||
 					frm.doc.paid_to_account_currency != company_currency) &&
 					frm.doc.paid_from_account_currency != frm.doc.paid_to_account_currency)));
+					
+		frm.toggle_display("cost_center", (frm.doc.payment_type == 'GL Payment'));
 
 		frm.refresh_fields();
 	},
@@ -215,7 +241,7 @@ frappe.ui.form.on('Payment Entry', {
 	},
 
 	payment_type: function(frm) {
-		if(frm.doc.payment_type == "Internal Transfer") {
+		if(frm.doc.payment_type == "Internal Transfer" || frm.doc.payment_type == "GL Payment") {
 			$.each(["party", "party_balance", "paid_from", "paid_to",
 				"references", "total_allocated_amount"], function(i, field) {
 				frm.set_value(field, null);
@@ -229,6 +255,23 @@ frappe.ui.form.on('Payment Entry', {
 				frm.events.mode_of_payment(frm);
 			}
 		}
+		
+		//Set default cost center
+		if(frm.doc.payment_type == "GL Payment" && !frm.doc.cost_center && frm.doc.company){
+			frappe.call({
+				'method': 'frappe.client.get_value',
+				'args': {
+					'doctype': 'Company',
+					'filters': {'name': frm.doc.company},
+				    'fieldname':'cost_center'
+				},
+				'callback': function(data){
+					frm.set_value('cost_center', data.message.cost_center);
+				}
+			});
+		}
+		
+		frm.toggle_display("cost_center", (frm.doc.payment_type == 'GL Payment'));
 	},
 
 	party_type: function(frm) {
@@ -378,7 +421,7 @@ frappe.ui.form.on('Payment Entry', {
 		if (frm.doc.paid_from_account_currency == company_currency) {
 			frm.set_value("source_exchange_rate", 1);
 		} else if (frm.doc.paid_from){
-			if (in_list(["Internal Transfer", "Pay"], frm.doc.payment_type)) {
+			if (in_list(["Internal Transfer", "Pay", "GL Payment"], frm.doc.payment_type)) {
 				var company_currency = frappe.get_doc(":Company", frm.doc.company).default_currency;
 				frappe.call({
 					method: "erpnext.setup.utils.get_exchange_rate",

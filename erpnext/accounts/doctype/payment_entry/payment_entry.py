@@ -101,7 +101,7 @@ class PaymentEntry(AccountsController):
 				doc.delink_advance_entries(self.name)
 
 	def set_missing_values(self):
-		if self.payment_type == "Internal Transfer":
+		if self.payment_type == "Internal Transfer" or self.payment_type == "GL Payment":
 			for field in ("party", "party_balance", "total_allocated_amount",
 				"base_total_allocated_amount", "unallocated_amount"):
 					self.set(field, None)
@@ -152,8 +152,8 @@ class PaymentEntry(AccountsController):
 						d.set(field, value)
 
 	def validate_payment_type(self):
-		if self.payment_type not in ("Receive", "Pay", "Internal Transfer"):
-			frappe.throw(_("Payment Type must be one of Receive, Pay and Internal Transfer"))
+		if self.payment_type not in ("Receive", "Pay", "Internal Transfer", "GL Payment"):
+			frappe.throw(_("Payment Type must be one of Receive, Pay, Internal Transfer or GL Payment"))
 
 	def validate_party_details(self):
 		if self.party:
@@ -371,6 +371,9 @@ class PaymentEntry(AccountsController):
 		if self.payment_type=="Internal Transfer":
 			remarks = [_("Amount {0} {1} transferred from {2} to {3}")
 				.format(self.paid_from_account_currency, self.paid_amount, self.paid_from, self.paid_to)]
+		elif self.payment_type=="GL Payment":
+			remarks = [_("Amount {0} {1} paid from {2} to {3}")
+				.format(self.paid_from_account_currency, self.paid_amount, self.paid_from, self.paid_to)]
 		else:
 
 			remarks = [_("Amount {0} {1} {2} {3}").format(
@@ -404,6 +407,7 @@ class PaymentEntry(AccountsController):
 		self.add_party_gl_entries(gl_entries)
 		self.add_bank_gl_entries(gl_entries)
 		self.add_deductions_gl_entries(gl_entries)
+		self.add_gl_payments_gl_entries(gl_entries)
 
 		make_gl_entries(gl_entries, cancel=cancel, adv_adj=adv_adj)
 
@@ -496,6 +500,29 @@ class PaymentEntry(AccountsController):
 						"cost_center": d.cost_center
 					})
 				)
+				
+	def add_gl_payments_gl_entries(self, gl_entries):
+		if self.payment_type == "GL Payment":
+			gl_entries.append(
+				self.get_gl_dict({
+					"account": self.paid_from,
+					"account_currency": self.paid_from_account_currency,
+					"against": self.paid_to,
+					"credit_in_account_currency": self.paid_amount,
+					"credit": self.base_paid_amount
+				})
+			)
+		if self.payment_type == "GL Payment":
+			gl_entries.append(
+				self.get_gl_dict({
+					"account": self.paid_to,
+					"account_currency": self.paid_to_account_currency,
+					"against": self.paid_from,
+					"debit_in_account_currency": self.received_amount,
+					"debit": self.base_received_amount,
+					"cost_center": self.cost_center
+				})
+			)
 
 	def update_advance_paid(self):
 		if self.payment_type in ("Receive", "Pay") and self.party:
